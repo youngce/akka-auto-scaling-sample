@@ -7,13 +7,13 @@ import akka.http.scaladsl.server.Directives._
 import akka.pattern.ask
 import akka.stream.ActorMaterializer
 
-case class Pong(from: String)
+case class Pong(msg: String)
 
 class PongActor extends Actor {
 	override def receive: Receive = {
-		case Ping =>
+		case Ping(to) =>
 			val port=context.system.settings.config.getString("akka.http.server.default-http-port")
-			sender() ! Pong(port)
+			sender() ! Pong(s"Ping to $to from actor name: ${context.self.path.name} port: $port")
 	}
 }
 
@@ -29,14 +29,14 @@ object Main extends App {
 	val actor = system.actorOf(Props(classOf[PongActor]), "pong")
 
 	val extractEntityId: ShardRegion.ExtractEntityId = {
-		case _ ⇒ (math.random().toString, Ping)
+		case ping@Ping(to) ⇒ (to, ping)
 		//		case msg @ Get(id)               ⇒ (id.toString, msg)
 	}
 
 	val numberOfShards = 100
 
 	val extractShardId: ShardRegion.ExtractShardId = {
-		case _ ⇒ (math.random() % numberOfShards).toString
+		case Ping(to) ⇒ (to.hashCode % numberOfShards).toString
 		case ShardRegion.StartEntity(id) ⇒
 			// StartEntity is used by remembering entities feature
 			(id.toLong % numberOfShards).toString
@@ -44,17 +44,17 @@ object Main extends App {
 
 	val region: ActorRef = ClusterSharding(system).start(
 		typeName = "PongActor",
-		entityProps = Props[PongActor],
+		entityProps = Props(classOf[PongActor]),
 		settings = ClusterShardingSettings(system),
 		extractEntityId = extractEntityId,
 		extractShardId = extractShardId
 	)
 	val route =
-		path("ping") {
+		path("names" / Segment) {name=>
 			get {
 
-				onSuccess(region ? Ping) {
-					case Pong(from) => complete(s"pong from $from")
+				onSuccess(region ? Ping(name)) {
+					case Pong(msg) => complete(msg)
 					//					case None       => complete(StatusCodes.NotFound)
 				}
 				//				complete(HttpEntity(ContentTypes.`text/html(UTF-8)`, s"node's name: $nodeName"))
@@ -66,4 +66,4 @@ object Main extends App {
 	//	println(s"Server online at http://localhost:8080/\nPress RETURN to stop...")
 }
 
-case object Ping
+case class Ping(to:String)
