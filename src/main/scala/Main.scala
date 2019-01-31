@@ -6,6 +6,7 @@ import akka.http.scaladsl.Http
 import akka.http.scaladsl.server.Directives._
 import akka.pattern.ask
 import akka.stream.ActorMaterializer
+import com.typesafe.config.{Config, ConfigFactory}
 
 case class Pong(msg: String)
 
@@ -18,6 +19,9 @@ class PongActor extends Actor {
 }
 
 object Main extends App {
+
+
+//	val config= ConfigFactory.load()
 
 	val nodeName = args.headOption.getOrElse("non-name")
 	implicit val system = ActorSystem("sys")
@@ -43,7 +47,7 @@ object Main extends App {
 	}
 
 	val region: ActorRef = ClusterSharding(system).start(
-		typeName = "PongActor",
+		typeName = "ClusterSharding",
 		entityProps = Props(classOf[PongActor]),
 		settings = ClusterShardingSettings(system),
 		extractEntityId = extractEntityId,
@@ -61,7 +65,7 @@ object Main extends App {
 			}
 		}
 
-	val bindingFuture = Http().bindAndHandle(route, "localhost")
+	val bindingFuture = Http().bindAndHandle(route, "0.0.0.0")
 
 	//	println(s"Server online at http://localhost:8080/\nPress RETURN to stop...")
 }
