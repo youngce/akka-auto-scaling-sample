@@ -7,80 +7,86 @@ import akka.http.scaladsl.Http
 import akka.http.scaladsl.server.Directives._
 import akka.pattern.ask
 import akka.stream.ActorMaterializer
+import akka.util.Timeout
 import com.typesafe.config.{Config, ConfigFactory, ConfigValueFactory}
+
 import scala.collection.JavaConverters._
+import scala.concurrent.ExecutionContextExecutor
 
 case class Pong(msg: String)
 
 class PongActor extends Actor {
-	override def receive: Receive = {
-		case Ping(to) =>
-//			val port=context.system.settings.config.getString("akka.http.server.default-http-port")
-			val ip=InetAddress.getLocalHost.getHostAddress
-			sender() ! Pong(s"Ping to $to from actor name: ${context.self.path.name} ip: $ip")
-	}
+  override def receive: Receive = {
+    case Ping(to) =>
+      //			val port=context.system.settings.config.getString("akka.http.server.default-http-port")
+      val ip = InetAddress.getLocalHost.getHostAddress
+      sender() ! Pong(s"Ping to $to from actor name: ${context.self.path.name} ip: $ip")
+  }
 }
+
+case class Ping(to: String)
 
 object Main extends App {
+  val config = addBindHostnameToConfig()
+  implicit val system: ActorSystem = ActorSystem("sys", config)
+  implicit val materializer: ActorMaterializer = ActorMaterializer()
+  // needed for the future flatMap/onComplete in the end
+  implicit val executionContext: ExecutionContextExecutor = system.dispatcher
+
+  implicit val timeout: Timeout = akka.util.Timeout(1000, TimeUnit.MILLISECONDS)
+  val nodeName = args.headOption.getOrElse("non-name")
+  val actor = system.actorOf(Props(classOf[PongActor]), "pong")
+  val extractEntityId: ShardRegion.ExtractEntityId = {
+    case ping@Ping(to) ⇒ (to, ping)
+
+  }
 
 
-	var config= ConfigFactory.load()
+  val numberOfShards = 100
 
-	val hostIP=config.getString("clustering.ip")
-	if (hostIP.contains("seed")){
-		val map=Map("remote.netty.tcp.bind-hostname"->InetAddress.getLocalHost.getHostAddress,
-			"remote.netty.tcp.bind-port"->"")
+  val extractShardId: ShardRegion.ExtractShardId = {
+    case Ping(to) ⇒ (to.hashCode % numberOfShards).toString
+    case ShardRegion.StartEntity(id) ⇒
+      // StartEntity is used by remembering entities feature
+      (id.toLong % numberOfShards).toString
+  }
+  val region: ActorRef = ClusterSharding(system).start(
+    typeName = "ClusterSharding",
+    entityProps = Props(classOf[PongActor]),
+    settings = ClusterShardingSettings(system),
+    extractEntityId = extractEntityId,
+    extractShardId = extractShardId
+  )
+  val route =
+    path("names" / Segment) { name =>
+      get {
 
-		val bindConfig=ConfigFactory.parseMap(map.asJava)
-		config=config.withFallback(bindConfig).resolve()
-		println(config.getString("remote.netty.tcp.bind-hostname"))
-	}
+        onSuccess(region ? Ping(name)) {
+          case Pong(msg) => complete(msg)
+        }
+      }
+    }
+  val bindingFuture = Http().bindAndHandle(route, "0.0.0.0")
 
-	val nodeName = args.headOption.getOrElse("non-name")
-	implicit val system = ActorSystem("sys",config)
-	implicit val materializer = ActorMaterializer()
-	// needed for the future flatMap/onComplete in the end
-	implicit val executionContext = system.dispatcher
 
-	implicit val timeout = akka.util.Timeout(1000, TimeUnit.MILLISECONDS)
-	val actor = system.actorOf(Props(classOf[PongActor]), "pong")
+  def addBindHostnameToConfig(): Config = {
+    var config = ConfigFactory.load()
+    val seedNodes = config.getStringList("akka.cluster.seed-nodes").asScala
+    val hostname = config.getString("akka.remote.netty.tcp.hostname")
+    if (isSeedNode(seedNodes, hostname)) {
+      val map = Map("remote.netty.tcp.bind-hostname" -> InetAddress.getLocalHost.getHostAddress,
+        "remote.netty.tcp.bind-port" -> "")
 
-	val extractEntityId: ShardRegion.ExtractEntityId = {
-		case ping@Ping(to) ⇒ (to, ping)
-		//		case msg @ Get(id)               ⇒ (id.toString, msg)
-	}
+      val bindConfig = ConfigFactory.parseMap(map.asJava)
+      config = config.withFallback(bindConfig).resolve()
+    }
+    config
+  }
 
-	val numberOfShards = 100
+  def isSeedNode(seedNodes: Iterable[String], hostname: String): Boolean = {
+    seedNodes.exists(seed => seed.contains(hostname))
 
-	val extractShardId: ShardRegion.ExtractShardId = {
-		case Ping(to) ⇒ (to.hashCode % numberOfShards).toString
-		case ShardRegion.StartEntity(id) ⇒
-			// StartEntity is used by remembering entities feature
-			(id.toLong % numberOfShards).toString
-	}
+  }
 
-	val region: ActorRef = ClusterSharding(system).start(
-		typeName = "ClusterSharding",
-		entityProps = Props(classOf[PongActor]),
-		settings = ClusterShardingSettings(system),
-		extractEntityId = extractEntityId,
-		extractShardId = extractShardId
-	)
-	val route =
-		path("names" / Segment) {name=>
-			get {
-
-				onSuccess(region ? Ping(name)) {
-					case Pong(msg) => complete(msg)
-					//					case None       => complete(StatusCodes.NotFound)
-				}
-				//				complete(HttpEntity(ContentTypes.`text/html(UTF-8)`, s"node's name: $nodeName"))
-			}
-		}
-
-	val bindingFuture = Http().bindAndHandle(route, "0.0.0.0")
-
-	//	println(s"Server online at http://localhost:8080/\nPress RETURN to stop...")
+  //	println(s"Server online at http://localhost:8080/\nPress RETURN to stop...")
 }
-
-case class Ping(to:String)
