@@ -1,3 +1,4 @@
+import java.net.InetAddress
 import java.util.concurrent.TimeUnit
 
 import akka.actor.{Actor, ActorRef, ActorSystem, Props}
@@ -6,25 +7,37 @@ import akka.http.scaladsl.Http
 import akka.http.scaladsl.server.Directives._
 import akka.pattern.ask
 import akka.stream.ActorMaterializer
-import com.typesafe.config.{Config, ConfigFactory}
+import com.typesafe.config.{Config, ConfigFactory, ConfigValueFactory}
+import scala.collection.JavaConverters._
 
 case class Pong(msg: String)
 
 class PongActor extends Actor {
 	override def receive: Receive = {
 		case Ping(to) =>
-			val port=context.system.settings.config.getString("akka.http.server.default-http-port")
-			sender() ! Pong(s"Ping to $to from actor name: ${context.self.path.name} port: $port")
+//			val port=context.system.settings.config.getString("akka.http.server.default-http-port")
+			val ip=InetAddress.getLocalHost.getHostAddress
+			sender() ! Pong(s"Ping to $to from actor name: ${context.self.path.name} ip: $ip")
 	}
 }
 
 object Main extends App {
 
 
-//	val config= ConfigFactory.load()
+	var config= ConfigFactory.load()
+
+	val hostIP=config.getString("clustering.ip")
+	if (hostIP.contains("seed")){
+		val map=Map("remote.netty.tcp.bind-hostname"->InetAddress.getLocalHost.getHostAddress,
+			"remote.netty.tcp.bind-port"->"")
+
+		val bindConfig=ConfigFactory.parseMap(map.asJava)
+		config=config.withFallback(bindConfig).resolve()
+		println(config.getString("remote.netty.tcp.bind-hostname"))
+	}
 
 	val nodeName = args.headOption.getOrElse("non-name")
-	implicit val system = ActorSystem("sys")
+	implicit val system = ActorSystem("sys",config)
 	implicit val materializer = ActorMaterializer()
 	// needed for the future flatMap/onComplete in the end
 	implicit val executionContext = system.dispatcher
