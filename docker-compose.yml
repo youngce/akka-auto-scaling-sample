@@ -3,7 +3,8 @@ services:
   seed:
     image: akka-auto-scaling-sample:0.1
     ports:
-    - "8080:8080"
+      - "8558:8558"
+      - "8080:8080"
 #    - "2552:2552"
     environment:
       CLUSTER_PORT: 2552

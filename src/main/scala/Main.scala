@@ -5,6 +5,8 @@ import akka.actor.{Actor, ActorRef, ActorSystem, Props}
 import akka.cluster.sharding.{ClusterSharding, ClusterShardingSettings, ShardRegion}
 import akka.http.scaladsl.Http
 import akka.http.scaladsl.server.Directives._
+import akka.management.cluster.bootstrap.ClusterBootstrap
+import akka.management.scaladsl.AkkaManagement
 import akka.pattern.ask
 import akka.stream.ActorMaterializer
 import akka.util.Timeout
@@ -27,8 +29,14 @@ class PongActor extends Actor {
 case class Ping(to: String)
 
 object Main extends App {
-  val config = addBindHostnameToConfig()
-  implicit val system: ActorSystem = ActorSystem("sys", config)
+//  val config = addBindHostnameToConfig()
+//  implicit val system: ActorSystem = ActorSystem("sys", config)
+  implicit val system: ActorSystem = ActorSystem("sys")
+  // Akka Management hosts the HTTP routes used by bootstrap
+  AkkaManagement(system).start()
+
+  // Starting the bootstrap process needs to be done explicitly
+  ClusterBootstrap(system).start()
   implicit val materializer: ActorMaterializer = ActorMaterializer()
   // needed for the future flatMap/onComplete in the end
   implicit val executionContext: ExecutionContextExecutor = system.dispatcher
