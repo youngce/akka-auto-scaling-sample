@@ -13,6 +13,7 @@ libraryDependencies += "com.typesafe.akka" %% "akka-cluster-sharding" % "2.5.20"
 libraryDependencies +="com.typesafe.akka" %% "akka-discovery" % "2.5.20"
 libraryDependencies += "com.lightbend.akka.discovery" %% "akka-discovery-kubernetes-api" % "1.0.0-RC3"
 libraryDependencies += "com.lightbend.akka.management" %% "akka-management-cluster-bootstrap" % "1.0.0-RC3"
+//libraryDependencies += "com.lightbend.akka.management" %% "akka-management-cluster-bootstrap" % "1.0.0-RC3"
 //libraryDependencies += "com.spotify" % "docker-client" % "8.9.0"
 
 // sbt native package

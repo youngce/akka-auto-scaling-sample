@@ -65,12 +65,15 @@ object Main extends App {
     extractEntityId = extractEntityId,
     extractShardId = extractShardId
   )
+  val ip= InetAddress.getLocalHost.getHostAddress
   val route =
     path("names" / Segment) { name =>
       get {
 
         onSuccess(region ? Ping(name)) {
-          case Pong(msg) => complete(msg)
+          case Pong(msg) =>
+            val str=s"$msg via route: $ip"
+            complete(str)
         }
       }
     }
